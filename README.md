@@ -102,7 +102,7 @@ A Python Flask-based chatbot application integrating OpenAI's ChatGPT and Amazon
 1. **Clone the Repository**:
 
    ```bash
-   git clone https://github.com/max-zelinski/chat-comprehension.git
+   git clone https://github.com/max-zelinski/chat-comprehension-bot.git
    cd chat-comprehension-bot
    ```
 
