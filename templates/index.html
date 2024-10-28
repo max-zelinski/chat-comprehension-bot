@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat Comprehension Bot</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
+    <style>
+        /* Reset margins and paddings */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        /* Make the container fill the full height minus padding */
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100% - 100pt); /* Subtract total vertical padding */
+            padding-top: 50pt;
+            padding-bottom: 50pt;
+        }
+        /* Adjust the chat box to fill available space */
+        #chat-box {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            padding: 15px;
+        }
+        /* Style the chat messages */
+        .chat-message {
+            margin-bottom: 15px;
+        }
+        .user-message {
+            text-align: right;
+        }
+        .assistant-message {
+            text-align: left;
+        }
+        .comprehension-data {
+            font-size: 0.8em;
+            color: grey;
+        }
+        .submit-feedback {
+            margin-top: 10px;
+        }
+        /* Ensure the form stays at the bottom */
+        #chat-form {
+            margin-top: auto;
+        }
+        /* Style for words with timestamps */
+        .word-with-timestamp {
+            display: inline-block;
+            margin: 2px;
+        }
+        .timestamp {
+            font-size: 0.8em;
+            color: grey;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Chat Comprehension Bot</h2>
+        <div id="chat-box">
+            <!-- Chat messages will be appended here -->
+        </div>
+        <form id="chat-form">
+            <div class="input-group">
+                <input type="text" id="user-input" class="form-control" placeholder="Type your message..." autocomplete="off">
+                <div class="input-group-append">
+                    <button class="btn btn-primary" type="submit">Send</button>
+                </div>
+            </div>
+        </form>
+        <audio id="audio-player" src="" hidden></audio>
+    </div>
+
+    <!-- Include jQuery -->
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <!-- Include custom JavaScript -->
+    <script>
+        $(document).ready(function() {
+            $('#chat-form').submit(function(event) {
+                event.preventDefault();
+                let userInput = $('#user-input').val().trim();
+                if (userInput === '') return;
+
+                // Append user message to chat box
+                $('#chat-box').append('<div class="chat-message user-message"><strong>You:</strong> ' + userInput + '</div>');
+                $('#user-input').val('');
+                scrollChatToBottom();
+
+                $.ajax({
+                    url: '/get_response',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ user_input: userInput }),
+                    success: function(response) {
+                        console.log('Response from server:', response);
+
+                        if (response.error) {
+                            alert('Server error: ' + response.error);
+                            return;
+                        }
+
+                        // The response now contains timestamps in the text
+                        let assistantResponse = response.chatgpt_response;
+
+                        // Display the assistant's response with timestamps and comprehension dropdowns
+                        displayAssistantResponseWithTimestampsAndComprehension(assistantResponse);
+
+                        scrollChatToBottom();
+
+                        // Play audio if available
+                        if (response.audio_data) {
+                            let audioPlayer = $('#audio-player')[0];
+                            audioPlayer.src = 'data:audio/mp3;base64,' + response.audio_data;
+                            audioPlayer.hidden = false;
+                            audioPlayer.play();
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('AJAX error:', error);
+                        alert('Error occurred while getting response: ' + error);
+                    }
+                });
+            });
+
+            $(document).on('click', '.submit-feedback', function() {
+                // Get the closest assistant message
+                let assistantMessage = $(this).closest('.assistant-message');
+                let wordComprehension = [];
+
+                // Collect the comprehension values for each word
+                assistantMessage.find('.comprehension-dropdown').each(function() {
+                    let wordIndex = $(this).data('word-index');
+                    let comprehensionValue = parseInt($(this).val());
+                    wordComprehension[wordIndex] = comprehensionValue;
+                });
+
+                // Reconstruct the assistant's response by concatenating the text of all words with timestamps
+                let assistant_response = assistantMessage.find('.word-with-timestamp').map(function() {
+                    let word = $(this).clone().children().remove().end().text();
+                    let timestamp = $(this).find('.timestamp').text();
+                    return word + timestamp;
+                }).get().join(' ').trim();
+
+                // Log the assistant response for debugging
+                console.log('Assistant response reconstructed:', assistant_response);
+
+                // Send the comprehension feedback to the server
+                $.ajax({
+                    url: '/submit_comprehension_feedback',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        word_comprehension: wordComprehension,
+                        assistant_response: assistant_response
+                    }),
+                    success: function(response) {
+                        alert('Thank you for your feedback!');
+
+                        if (response.explanation) {
+                            // The explanation now includes timestamps
+                            let explanation = response.explanation;
+
+                            // Display the assistant's explanation with timestamps and comprehension dropdowns
+                            displayAssistantResponseWithTimestampsAndComprehension(explanation);
+
+                            scrollChatToBottom();
+
+                            // Play audio if available
+                            if (response.audio_data) {
+                                let audioPlayer = $('#audio-player')[0];
+                                audioPlayer.src = 'data:audio/mp3;base64,' + response.audio_data;
+                                audioPlayer.hidden = false;
+                                audioPlayer.play();
+                            }
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Feedback submission error:', error);
+                        alert('Error occurred while submitting feedback: ' + error);
+                    }
+                });
+            });
+
+            function scrollChatToBottom() {
+                $('#chat-box').scrollTop($('#chat-box')[0].scrollHeight);
+            }
+
+            function displayAssistantResponseWithTimestampsAndComprehension(responseText) {
+                // Split the responseText into words and timestamps
+                // Expected format: "word1[timestamp1] word2[timestamp2] ..."
+                let wordsWithTimestamps = responseText.match(/\S+\[\d+ms\]/g);
+                if (!wordsWithTimestamps) {
+                    // If no timestamps are found, display the text as is
+                    $('#chat-box').append('<div class="chat-message assistant-message"><strong>Assistant:</strong> ' + responseText + '</div>');
+                    return;
+                }
+
+                let messageHTML = '<div class="chat-message assistant-message"><strong>Assistant:</strong><br>';
+                messageHTML += '<div style="display: flex; flex-wrap: wrap; align-items: center;">';
+
+                for (let i = 0; i < wordsWithTimestamps.length; i++) {
+                    let item = wordsWithTimestamps[i];
+                    let match = item.match(/(.+)\[(\d+)ms\]/);
+                    if (match) {
+                        let word = match[1];
+                        let timestamp = match[2];
+                        messageHTML += '<div style="text-align: center; margin: 5px;">';
+                        messageHTML += '<span class="word-with-timestamp">' + word + '<span class="timestamp">[' + timestamp + 'ms]</span></span><br>';
+                        // Include comprehension dropdown
+                        messageHTML += '<select class="comprehension-dropdown" data-word-index="' + i + '">';
+                        for (let value = 1; value <= 10; value++) {
+                            let selected = (value === 10) ? 'selected' : '';
+                            messageHTML += '<option value="' + value + '" ' + selected + '>' + value + '</option>';
+                        }
+                        messageHTML += '</select>';
+                        messageHTML += '</div>';
+                    } else {
+                        // Handle words without timestamps
+                        messageHTML += '<div style="text-align: center; margin: 5px;">';
+                        messageHTML += '<span class="word-with-timestamp">' + item + '</span><br>';
+                        // Include comprehension dropdown
+                        messageHTML += '<select class="comprehension-dropdown" data-word-index="' + i + '">';
+                        for (let value = 1; value <= 10; value++) {
+                            let selected = (value === 10) ? 'selected' : '';
+                            messageHTML += '<option value="' + value + '" ' + selected + '>' + value + '</option>';
+                        }
+                        messageHTML += '</select>';
+                        messageHTML += '</div>';
+                    }
+                }
+                messageHTML += '</div>';
+                messageHTML += '<button class="btn btn-secondary submit-feedback">Submit Feedback</button>';
+                messageHTML += '</div>';
+                $('#chat-box').append(messageHTML);
+            }
+        });
+    </script>
+</body>
+</html>

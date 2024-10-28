@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "chat-emotion-bot-python"
+version = "0.1.0"
+description = ""
+authors = ["Max Zelinski"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+flask = "^3.0.3"
+boto3 = "^1.35.49"
+python-dotenv = "^1.0.1"
+requests = "^2.32.3"
+openai = "0.28.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
